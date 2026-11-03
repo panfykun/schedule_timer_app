@@ -91,8 +91,12 @@
     <!-- 明日の予定モーダル -->
     <div id="modal-tomorrow" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex-col justify-end">
         <div class="bg-white rounded-t-3xl w-full max-w-md mx-auto h-[80vh] flex flex-col">
-            <div class="flex justify-between items-center p-4 border-b">
+            <!-- ヘッダー部分に相対位置を追加し、中央に上書きボタンを配置 -->
+            <div class="flex justify-between items-center p-4 border-b relative">
                 <h2 class="text-xl font-bold">明日の予定</h2>
+                <button id="btn-copy-today" class="absolute left-1/2 transform -translate-x-1/2 px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-full text-sm font-bold active:bg-blue-100 transition-colors shadow-sm">
+                    今日の予定を上書き
+                </button>
                 <button id="btn-close-modal" class="text-gray-500 font-bold p-2 hover:text-gray-700 transition-colors">閉じる</button>
             </div>
             <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50" id="tomorrow-list-container">
@@ -128,6 +132,10 @@
             tomorrowSchedules: []
         };
 
+        // ドラッグ＆ドロップ用の一時データ
+        let dragSrcIndex = -1;
+        let dragSrcType = null;
+
         // DOM要素の参照
         const els = {
             clock: document.getElementById('clock'),
@@ -140,7 +148,8 @@
             modalTomorrow: document.getElementById('modal-tomorrow'),
             btnCloseModal: document.getElementById('btn-close-modal'),
             tomorrowListContainer: document.getElementById('tomorrow-list-container'),
-            btnAddTomorrow: document.getElementById('btn-add-tomorrow')
+            btnAddTomorrow: document.getElementById('btn-add-tomorrow'),
+            btnCopyToday: document.getElementById('btn-copy-today') // 追加
         };
 
         /**
@@ -191,8 +200,8 @@
             state.schedules.forEach((sch, index) => {
                 const itemEl = document.createElement('div');
                 itemEl.id = `item-${index}`;
-                // 基本のスタイリング（ハイライト処理はupdateUIで動的に上書き）
-                itemEl.className = 'flex items-center justify-between p-4 rounded-2xl bg-white border-l-4 border-transparent shadow-sm transition-all duration-300';
+                // cursor-move を追加
+                itemEl.className = 'flex items-center justify-between p-4 rounded-2xl bg-white border-l-4 border-transparent shadow-sm transition-all duration-300 cursor-move';
                 
                 itemEl.innerHTML = `
                     <div class="flex flex-col flex-1 pr-4 min-w-0">
@@ -212,6 +221,9 @@
                     </button>
                 `;
                 els.listContainer.appendChild(itemEl);
+
+                // ドラッグ&ドロップイベントの設定
+                setupDragAndDrop(itemEl, index, 'today');
 
                 // 入力変更時のイベントリスナー
                 document.getElementById(`time-${index}`).addEventListener('change', (e) => {
@@ -243,7 +255,7 @@
 
             state.tomorrowSchedules.forEach((sch, index) => {
                 const itemEl = document.createElement('div');
-                itemEl.className = 'flex items-center justify-between p-4 rounded-2xl bg-white border border-gray-200 shadow-sm transition-all duration-300';
+                itemEl.className = 'flex items-center justify-between p-4 rounded-2xl bg-white border border-gray-200 shadow-sm transition-all duration-300 cursor-move';
                 
                 itemEl.innerHTML = `
                     <div class="flex flex-col flex-1 pr-4 min-w-0">
@@ -261,6 +273,9 @@
                 `;
                 els.tomorrowListContainer.appendChild(itemEl);
 
+                // ドラッグ&ドロップイベントの設定
+                setupDragAndDrop(itemEl, index, 'tomorrow');
+
                 document.getElementById(`tomorrow-time-${index}`).addEventListener('change', (e) => {
                     state.tomorrowSchedules[index].time = e.target.value;
                     saveData();
@@ -272,6 +287,83 @@
                 document.getElementById(`tomorrow-delete-${index}`).addEventListener('click', () => {
                     removeTomorrowSchedule(index);
                 });
+            });
+        }
+
+        /**
+         * ドラッグ＆ドロップの共通イベント設定
+         */
+        function setupDragAndDrop(itemEl, index, type) {
+            // インプット要素等への操作中はドラッグを無効化する
+            const disableDragForInputs = (e) => {
+                if (['INPUT', 'BUTTON', 'SVG', 'PATH'].includes(e.target.tagName.toUpperCase()) || e.target.closest('button')) {
+                    itemEl.setAttribute('draggable', 'false');
+                } else {
+                    itemEl.setAttribute('draggable', 'true');
+                }
+            };
+            itemEl.addEventListener('mousedown', disableDragForInputs);
+            itemEl.addEventListener('touchstart', disableDragForInputs, { passive: true });
+
+            itemEl.addEventListener('dragstart', (e) => {
+                dragSrcIndex = index;
+                dragSrcType = type;
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', index);
+                setTimeout(() => itemEl.classList.add('opacity-30'), 0);
+            });
+
+            itemEl.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+                if (dragSrcType === type && dragSrcIndex !== index) {
+                    // ドロップ先のインジケーターとして上部に破線を表示
+                    itemEl.style.borderTop = '4px dashed #3b82f6';
+                }
+                return false;
+            });
+
+            itemEl.addEventListener('dragleave', () => {
+                itemEl.style.borderTop = '';
+            });
+
+            itemEl.addEventListener('dragend', () => {
+                itemEl.classList.remove('opacity-30');
+                itemEl.style.borderTop = '';
+                // 念のため全てのインジケーターをクリア
+                const container = type === 'today' ? els.listContainer : els.tomorrowListContainer;
+                container.querySelectorAll('div').forEach(el => el.style.borderTop = '');
+            });
+
+            itemEl.addEventListener('drop', (e) => {
+                e.stopPropagation();
+                itemEl.style.borderTop = '';
+                
+                if (dragSrcType === type && dragSrcIndex !== index) {
+                    const targetArray = type === 'today' ? state.schedules : state.tomorrowSchedules;
+                    const draggedItem = targetArray.splice(dragSrcIndex, 1)[0];
+                    targetArray.splice(index, 0, draggedItem);
+                    
+                    // 今日の予定の場合は現在位置のインデックス（ハイライト）も追従して調整
+                    if (type === 'today') {
+                        if (state.currentIndex === dragSrcIndex) {
+                            state.currentIndex = index;
+                        } else if (dragSrcIndex < state.currentIndex && index >= state.currentIndex) {
+                            state.currentIndex--;
+                        } else if (dragSrcIndex > state.currentIndex && index <= state.currentIndex) {
+                            state.currentIndex++;
+                        }
+                    }
+                    
+                    saveData();
+                    if (type === 'today') {
+                        renderList();
+                        updateUI();
+                    } else {
+                        renderTomorrowList();
+                    }
+                }
+                return false;
             });
         }
 
@@ -336,6 +428,28 @@
 
             els.btnAddTomorrow.addEventListener('click', () => {
                 addTomorrowSchedule();
+            });
+
+            // 今日の予定を上書きボタンのイベント
+            els.btnCopyToday.addEventListener('click', () => {
+                const isConfirmed = confirm('今日の予定を明日の予定に上書きしますか？\n（現在の明日の予定は消去されます。今日の予定は削除されません）');
+                if (isConfirmed) {
+                    // 今日の予定をディープコピーして明日の予定に設定
+                    state.tomorrowSchedules = JSON.parse(JSON.stringify(state.schedules));
+                    
+                    // 明日の予定用に記録データをリセットし、IDを新しくする
+                    state.tomorrowSchedules.forEach(sch => {
+                        sch.recordedDiff = null;
+                        sch.id = Date.now().toString() + Math.random().toString(36).substring(2, 9);
+                    });
+
+                    saveData();
+                    renderTomorrowList();
+                    
+                    // 確認のログ表示
+                    console.log('今日の予定を明日の予定に上書きしました。');
+                    alert('今日の予定を明日の予定に上書きしました。');
+                }
             });
         }
 
