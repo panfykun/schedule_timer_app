@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>スケジュール・タイマー</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* カスタムフォントとグラデーションテキストの定義 */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@700&display=swap');
+        
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Tailwind gray-100 */
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        .font-mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* 最後の予定用の虹色グラデーション */
+        .text-rainbow {
+            background-image: linear-gradient(90deg, #ef4444, #f97316, #eab308, #22c55e, #3b82f6, #a855f7);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+
+        /* iPhoneのセーフエリア対応用パディング */
+        .pb-safe {
+            padding-bottom: env(safe-area-inset-bottom, 1rem);
+        }
+    </style>
+</head>
+<body class="flex flex-col h-screen overflow-hidden text-gray-800">
+
+    <!-- ヘッダー：現在時刻表示 -->
+    <header class="fixed top-0 left-0 w-full bg-white shadow-sm z-20">
+        <div class="max-w-md mx-auto px-4 py-4 flex justify-center items-center relative">
+            <div id="clock" class="text-4xl font-mono font-bold tracking-tight text-gray-800">
+                00:00:00
+            </div>
+            <button id="btn-tomorrow" class="absolute right-4 px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-full text-sm font-bold active:bg-blue-100 transition-colors shadow-sm">
+                明日の予定
+            </button>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ：予定リスト -->
+    <main class="flex-1 overflow-y-auto w-full max-w-md mx-auto pt-24 pb-32 px-4 relative scroll-smooth" id="scroll-container">
+        <div id="list-container" class="space-y-4">
+            <!-- JSでリストが生成されます -->
+        </div>
+
+        <!-- 予定追加ボタン -->
+        <div class="mt-6 text-center">
+            <button id="btn-add" class="py-3 px-6 bg-white border border-gray-300 rounded-full font-bold text-gray-600 shadow-sm active:bg-gray-50 transition-colors inline-flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />
+                </svg>
+                予定を追加
+            </button>
+        </div>
+
+        <!-- 全て完了時のメッセージ -->
+        <div id="done-message" class="hidden mt-8 text-center bg-green-50 text-green-600 rounded-2xl p-6 border border-green-200 shadow-sm">
+            <div class="text-2xl mb-2">🎉</div>
+            <h2 class="text-xl font-bold">すべての予定が完了しました</h2>
+        </div>
+    </main>
+
+    <!-- フッター：操作ボタン -->
+    <footer class="fixed bottom-0 left-0 w-full bg-white border-t border-gray-200 z-20 pb-safe">
+        <div class="max-w-md mx-auto px-4 py-3 flex space-x-3">
+            <button id="btn-up" class="flex-1 py-4 bg-gray-100 active:bg-gray-200 rounded-2xl font-bold text-gray-700 transition-colors flex justify-center items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clip-rule="evenodd" />
+                </svg>
+                上へ
+            </button>
+            <button id="btn-down" class="flex-[2] py-4 bg-blue-600 active:bg-blue-700 rounded-2xl font-bold text-white shadow-md transition-colors flex justify-center items-center gap-2">
+                下へ
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                </svg>
+            </button>
+        </div>
+    </footer>
+
+    <!-- 明日の予定モーダル -->
+    <div id="modal-tomorrow" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden flex-col justify-end">
+        <div class="bg-white rounded-t-3xl w-full max-w-md mx-auto h-[80vh] flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h2 class="text-xl font-bold">明日の予定</h2>
+                <button id="btn-close-modal" class="text-gray-500 font-bold p-2 hover:text-gray-700 transition-colors">閉じる</button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50" id="tomorrow-list-container">
+                <!-- JSで明日の予定リスト生成 -->
+            </div>
+            <div class="p-4 border-t bg-white text-center pb-safe">
+                <button id="btn-add-tomorrow" class="py-3 px-6 bg-white border border-gray-300 rounded-full font-bold text-gray-600 shadow-sm active:bg-gray-50 transition-colors inline-flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd" />
+                    </svg>
+                    予定を追加
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * アプリケーションの状態
+         */
+        const STORAGE_KEY = 'scheduleTimerData';
+
+        let state = {
+            currentIndex: 0,
+            lastDateStr: new Date().toLocaleDateString(),
+            schedules: [
+                { id: '1', time: '07:00', title: '朝食・準備', recordedDiff: null },
+                { id: '2', time: '07:30', title: '出発', recordedDiff: null },
+                { id: '3', time: '08:00', title: '到着・作業開始', recordedDiff: null },
+                { id: '4', time: '10:00', title: 'ミーティング', recordedDiff: null },
+                { id: '5', time: '12:00', title: 'お昼休憩', recordedDiff: null }
+            ],
+            tomorrowSchedules: []
+        };
+
+        // DOM要素の参照
+        const els = {
+            clock: document.getElementById('clock'),
+            listContainer: document.getElementById('list-container'),
+            doneMessage: document.getElementById('done-message'),
+            btnUp: document.getElementById('btn-up'),
+            btnDown: document.getElementById('btn-down'),
+            btnAdd: document.getElementById('btn-add'),
+            btnTomorrow: document.getElementById('btn-tomorrow'),
+            modalTomorrow: document.getElementById('modal-tomorrow'),
+            btnCloseModal: document.getElementById('btn-close-modal'),
+            tomorrowListContainer: document.getElementById('tomorrow-list-container'),
+            btnAddTomorrow: document.getElementById('btn-add-tomorrow')
+        };
+
+        /**
+         * データの保存と読み込み
+         */
+        function loadData() {
+            const savedData = localStorage.getItem(STORAGE_KEY);
+            if (savedData) {
+                try {
+                    const parsed = JSON.parse(savedData);
+                    state = { ...state, ...parsed };
+                    if (!state.tomorrowSchedules) state.tomorrowSchedules = [];
+                    if (!state.lastDateStr) state.lastDateStr = new Date().toLocaleDateString();
+                } catch (e) {
+                    console.error('Failed to parse saved data.', e);
+                }
+            }
+        }
+
+        function saveData() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        }
+
+        /**
+         * 初期化処理
+         */
+        function init() {
+            // LocalStorageからデータを読み込む
+            loadData();
+
+            renderList();
+            setupEventListeners();
+            
+            // 毎秒UIを更新
+            setInterval(updateUI, 1000);
+            updateUI(); // 初回実行
+
+            // リロード時に現在の予定位置へスクロールしておく
+            scrollToCurrent();
+        }
+
+        /**
+         * リストDOMの初回生成
+         */
+        function renderList() {
+            els.listContainer.innerHTML = '';
+            
+            state.schedules.forEach((sch, index) => {
+                const itemEl = document.createElement('div');
+                itemEl.id = `item-${index}`;
+                // 基本のスタイリング（ハイライト処理はupdateUIで動的に上書き）
+                itemEl.className = 'flex items-center justify-between p-4 rounded-2xl bg-white border-l-4 border-transparent shadow-sm transition-all duration-300';
+                
+                itemEl.innerHTML = `
+                    <div class="flex flex-col flex-1 pr-4 min-w-0">
+                        <input type="time" id="time-${index}" value="${sch.time}" 
+                            class="text-3xl font-mono font-bold bg-transparent border-b border-transparent focus:border-blue-300 outline-none w-full pb-1 transition-colors" />
+                        <input type="text" id="title-${index}" value="${sch.title}" 
+                            class="text-base text-gray-500 bg-transparent border-b border-transparent focus:border-blue-300 outline-none w-full pb-1 mt-1 transition-colors" 
+                            placeholder="予定名を入力" />
+                    </div>
+                    <div id="timer-${index}" class="text-2xl font-bold font-mono text-right w-28 shrink-0 transition-opacity duration-300 opacity-0">
+                        <!-- タイマー値がここに入ります -->
+                    </div>
+                    <button id="delete-${index}" class="ml-1 p-2 text-gray-300 hover:text-red-500 active:text-red-600 transition-colors shrink-0 ${state.schedules.length <= 1 ? 'invisible' : ''}" aria-label="予定を削除">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                `;
+                els.listContainer.appendChild(itemEl);
+
+                // 入力変更時のイベントリスナー
+                document.getElementById(`time-${index}`).addEventListener('change', (e) => {
+                    state.schedules[index].time = e.target.value;
+                    saveData();
+                    updateUI(); // 即座に反映
+                });
+                document.getElementById(`title-${index}`).addEventListener('change', (e) => {
+                    state.schedules[index].title = e.target.value;
+                    saveData();
+                });
+
+                // 削除ボタンのイベントリスナー
+                document.getElementById(`delete-${index}`).addEventListener('click', () => {
+                    removeSchedule(index);
+                });
+            });
+        }
+
+        /**
+         * 明日の予定リストのDOM生成
+         */
+        function renderTomorrowList() {
+            els.tomorrowListContainer.innerHTML = '';
+            
+            if (state.tomorrowSchedules.length === 0) {
+                els.tomorrowListContainer.innerHTML = '<div class="text-center text-gray-500 mt-10">明日の予定はまだありません。</div>';
+            }
+
+            state.tomorrowSchedules.forEach((sch, index) => {
+                const itemEl = document.createElement('div');
+                itemEl.className = 'flex items-center justify-between p-4 rounded-2xl bg-white border border-gray-200 shadow-sm transition-all duration-300';
+                
+                itemEl.innerHTML = `
+                    <div class="flex flex-col flex-1 pr-4 min-w-0">
+                        <input type="time" id="tomorrow-time-${index}" value="${sch.time}" 
+                            class="text-3xl font-mono font-bold bg-transparent border-b border-transparent focus:border-blue-300 outline-none w-full pb-1 transition-colors" />
+                        <input type="text" id="tomorrow-title-${index}" value="${sch.title}" 
+                            class="text-base text-gray-500 bg-transparent border-b border-transparent focus:border-blue-300 outline-none w-full pb-1 mt-1 transition-colors" 
+                            placeholder="予定名を入力" />
+                    </div>
+                    <button id="tomorrow-delete-${index}" class="ml-1 p-2 text-gray-300 hover:text-red-500 active:text-red-600 transition-colors shrink-0" aria-label="予定を削除">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                `;
+                els.tomorrowListContainer.appendChild(itemEl);
+
+                document.getElementById(`tomorrow-time-${index}`).addEventListener('change', (e) => {
+                    state.tomorrowSchedules[index].time = e.target.value;
+                    saveData();
+                });
+                document.getElementById(`tomorrow-title-${index}`).addEventListener('change', (e) => {
+                    state.tomorrowSchedules[index].title = e.target.value;
+                    saveData();
+                });
+                document.getElementById(`tomorrow-delete-${index}`).addEventListener('click', () => {
+                    removeTomorrowSchedule(index);
+                });
+            });
+        }
+
+        /**
+         * ボタン等のイベント設定
+         */
+        function setupEventListeners() {
+            els.btnAdd.addEventListener('click', () => {
+                addSchedule();
+            });
+
+            els.btnDown.addEventListener('click', () => {
+                if (state.currentIndex >= state.schedules.length) return; // すでに完了状態
+
+                // 現在の予定のタイマー差分を記録する
+                const now = new Date();
+                const sch = state.schedules[state.currentIndex];
+                const targetDate = getTargetDate(sch.time);
+                
+                if (targetDate) {
+                    sch.recordedDiff = Math.floor((now.getTime() - targetDate.getTime()) / 1000);
+                } else {
+                    sch.recordedDiff = 0; // 時刻未入力の場合のフォールバック
+                }
+
+                // インデックスを進める
+                state.currentIndex++;
+                
+                // 状態を保存
+                saveData();
+                
+                // 次の予定へスクロール
+                scrollToCurrent();
+                updateUI();
+            });
+
+            els.btnUp.addEventListener('click', () => {
+                if (state.currentIndex > 0) {
+                    // インデックスを1つ戻す
+                    state.currentIndex--;
+                    // 戻った先の予定の記録をクリアし、再度ライブタイマーにする
+                    state.schedules[state.currentIndex].recordedDiff = null;
+                    
+                    // 状態を保存
+                    saveData();
+                    
+                    scrollToCurrent();
+                    updateUI();
+                }
+            });
+
+            els.btnTomorrow.addEventListener('click', () => {
+                renderTomorrowList();
+                els.modalTomorrow.classList.remove('hidden');
+                els.modalTomorrow.classList.add('flex');
+            });
+
+            els.btnCloseModal.addEventListener('click', () => {
+                els.modalTomorrow.classList.add('hidden');
+                els.modalTomorrow.classList.remove('flex');
+            });
+
+            els.btnAddTomorrow.addEventListener('click', () => {
+                addTomorrowSchedule();
+            });
+        }
+
+        /**
+         * 予定の追加と削除
+         */
+        function addSchedule() {
+            // 新しい予定の初期値（最後の予定の時刻をコピー）
+            const lastSch = state.schedules[state.schedules.length - 1];
+            const newTime = lastSch ? lastSch.time : '12:00';
+            
+            state.schedules.push({
+                id: Date.now().toString(),
+                time: newTime,
+                title: '',
+                recordedDiff: null
+            });
+            
+            saveData();
+            renderList();
+            updateUI();
+            
+            // 追加した要素へスクロール
+            setTimeout(() => {
+                const el = document.getElementById(`item-${state.schedules.length - 1}`);
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 50);
+        }
+
+        function removeSchedule(index) {
+            // 最低1つは残す
+            if (state.schedules.length <= 1) return;
+
+            state.schedules.splice(index, 1);
+
+            // カレントインデックスの調整
+            if (index < state.currentIndex) {
+                state.currentIndex--;
+            } else if (index === state.currentIndex) {
+                if (state.currentIndex < state.schedules.length) {
+                    // 新しくカレントになった予定の記録をリセットする
+                    state.schedules[state.currentIndex].recordedDiff = null;
+                }
+            }
+
+            // カレントが要素数を超えてしまった場合の補正
+            if (state.currentIndex > state.schedules.length) {
+                state.currentIndex = state.schedules.length;
+            }
+
+            saveData();
+            renderList();
+            updateUI();
+        }
+
+        function addTomorrowSchedule() {
+            const lastSch = state.tomorrowSchedules[state.tomorrowSchedules.length - 1];
+            const newTime = lastSch ? lastSch.time : '07:00';
+            
+            state.tomorrowSchedules.push({
+                id: Date.now().toString(),
+                time: newTime,
+                title: '',
+                recordedDiff: null
+            });
+            
+            saveData();
+            renderTomorrowList();
+            
+            setTimeout(() => {
+                els.tomorrowListContainer.scrollTop = els.tomorrowListContainer.scrollHeight;
+            }, 50);
+        }
+
+        function removeTomorrowSchedule(index) {
+            state.tomorrowSchedules.splice(index, 1);
+            saveData();
+            renderTomorrowList();
+        }
+
+        /**
+         * 現在の予定位置へスムーズスクロール
+         */
+        function scrollToCurrent() {
+            // DOM更新より少し遅らせて実行することで安全にスクロールする
+            setTimeout(() => {
+                if (state.currentIndex < state.schedules.length) {
+                    const el = document.getElementById(`item-${state.currentIndex}`);
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            }, 50);
+        }
+
+        /**
+         * 時刻文字列(HH:MM)から本日のDateオブジェクトを生成
+         */
+        function getTargetDate(timeStr) {
+            if (!timeStr) return null;
+            const [h, m] = timeStr.split(':').map(Number);
+            const now = new Date();
+            return new Date(now.getFullYear(), now.getMonth(), now.getDate(), h, m, 0);
+        }
+
+        /**
+         * 秒数差分を -m:ss または +m:ss 形式に変換
+         */
+        function formatDiff(diffSec) {
+            const abs = Math.abs(diffSec);
+            const sign = diffSec < 0 ? '-' : '+';
+            if (abs >= 3600) {
+                const h = Math.floor(abs / 3600);
+                const m = Math.floor((abs % 3600) / 60);
+                const s = abs % 60;
+                const mStr = m.toString().padStart(2, '0');
+                const sStr = s.toString().padStart(2, '0');
+                return `${sign}${h}:${mStr}:${sStr}`;
+            } else {
+                const m = Math.floor(abs / 60);
+                const s = abs % 60;
+                const sStr = s.toString().padStart(2, '0');
+                return `${sign}${m}:${sStr}`;
+            }
+        }
+
+        /**
+         * UI全体の同期処理 (時計表示、ハイライト、タイマー計算)
+         */
+        function updateUI() {
+            const now = new Date();
+            
+            // 1. 日付変更チェックと明日の予定の上書き
+            const currentDateStr = now.toLocaleDateString();
+            if (state.lastDateStr && state.lastDateStr !== currentDateStr) {
+                if (state.tomorrowSchedules && state.tomorrowSchedules.length > 0) {
+                    // 明日の予定を今日の予定に上書き
+                    state.schedules = JSON.parse(JSON.stringify(state.tomorrowSchedules));
+                    state.schedules.forEach(sch => sch.recordedDiff = null);
+                    state.currentIndex = 0;
+                    state.tomorrowSchedules = []; // 上書きしたら空白にする
+                } else {
+                    // 明日の予定が設定されていない場合は、進行状態（recordedDiffとcurrentIndex）だけリセットする
+                    state.schedules.forEach(sch => sch.recordedDiff = null);
+                    state.currentIndex = 0;
+                }
+                state.lastDateStr = currentDateStr;
+                saveData();
+                renderList();
+                
+                // モーダルが開いていたら再描画する
+                if (!els.modalTomorrow.classList.contains('hidden')) {
+                    renderTomorrowList();
+                }
+            } else if (!state.lastDateStr) {
+                state.lastDateStr = currentDateStr;
+                saveData();
+            }
+
+            // 2. ヘッダーの時計を更新
+            const hh = now.getHours().toString().padStart(2, '0');
+            const mm = now.getMinutes().toString().padStart(2, '0');
+            const ss = now.getSeconds().toString().padStart(2, '0');
+            els.clock.innerText = `${hh}:${mm}:${ss}`;
+
+            // 3. リスト各項目の状態を更新
+            state.schedules.forEach((sch, index) => {
+                const itemEl = document.getElementById(`item-${index}`);
+                if (!itemEl) return; // 再描画直後のタイミングズレ防止
+                
+                const timerEl = document.getElementById(`timer-${index}`);
+                const isCurrent = (index === state.currentIndex);
+                const isLast = (index === state.schedules.length - 1);
+
+                // 【ハイライト処理】
+                if (isCurrent) {
+                    itemEl.classList.add('border-blue-500', 'bg-blue-50', 'scale-[1.02]', 'shadow-md');
+                    itemEl.classList.remove('border-transparent', 'bg-white', 'shadow-sm', 'opacity-50');
+                } else if (index < state.currentIndex) {
+                    // 終了済みの予定は少し薄くする
+                    itemEl.classList.remove('border-blue-500', 'bg-blue-50', 'scale-[1.02]', 'shadow-md');
+                    itemEl.classList.add('border-transparent', 'bg-white', 'shadow-sm', 'opacity-50');
+                } else {
+                    // 未来の予定
+                    itemEl.classList.remove('border-blue-500', 'bg-blue-50', 'scale-[1.02]', 'shadow-md', 'opacity-50');
+                    itemEl.classList.add('border-transparent', 'bg-white', 'shadow-sm');
+                }
+
+                // 【タイマー計算処理】
+                let displaySec = null;
+                let isRecorded = false;
+
+                if (sch.recordedDiff !== null) {
+                    // すでに下ボタンで固定された値がある場合
+                    displaySec = sch.recordedDiff;
+                    isRecorded = true;
+                } else if (isCurrent) {
+                    // カレント予定の場合、ライブタイマーを計算
+                    const targetDate = getTargetDate(sch.time);
+                    if (targetDate) {
+                        const diffSec = Math.floor((now.getTime() - targetDate.getTime()) / 1000);
+                        // 終了予定時刻の5分前（-300秒）以降になったら表示
+                        if (diffSec >= -300) {
+                            displaySec = diffSec;
+                        }
+                    }
+                }
+
+                // 【タイマー描画と色分け処理】
+                if (displaySec !== null && Math.abs(displaySec) >= 3600) {
+                    timerEl.className = 'text-lg font-bold font-mono text-right w-28 shrink-0 transition-opacity duration-300';
+                } else {
+                    timerEl.className = 'text-2xl font-bold font-mono text-right w-28 shrink-0 transition-opacity duration-300';
+                }
+                
+                if (displaySec !== null) {
+                    timerEl.innerText = formatDiff(displaySec);
+                    timerEl.classList.add('opacity-100'); // 表示
+                    
+                    if (isRecorded) {
+                        // ▼ 固定タイマーの色分け
+                        if (isLast) {
+                            // カレントが「最後の予定」だった場合
+                            if (displaySec < 0) {
+                                timerEl.classList.add('text-rainbow');
+                            } else {
+                                timerEl.classList.add('text-red-500');
+                            }
+                        } else {
+                            // 通常の予定
+                            if (displaySec < -300) {
+                                timerEl.classList.add('text-green-500'); // -5:00 未満（300秒より大きい前倒し）
+                            } else if (displaySec < 0) {
+                                timerEl.classList.add('text-blue-500');  // 300秒未満の前倒し
+                            } else {
+                                timerEl.classList.add('text-red-500');   // 正の値（遅れ）
+                            }
+                        }
+                    } else {
+                        // ▼ ライブタイマーの色分け
+                        if (displaySec < 0) {
+                            timerEl.classList.add('text-blue-500');
+                        } else {
+                            timerEl.classList.add('text-red-500');
+                        }
+                    }
+                } else {
+                    // 表示条件を満たさない場合
+                    timerEl.innerText = '';
+                    timerEl.classList.add('opacity-0');
+                }
+            });
+
+            // 4. 完了状態の表示制御とボタンの制御
+            if (state.currentIndex >= state.schedules.length) {
+                els.doneMessage.classList.remove('hidden');
+                els.btnDown.disabled = true;
+                els.btnDown.classList.add('opacity-50', 'cursor-not-allowed');
+            } else {
+                els.doneMessage.classList.add('hidden');
+                els.btnDown.disabled = false;
+                els.btnDown.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+
+            if (state.currentIndex === 0) {
+                els.btnUp.disabled = true;
+                els.btnUp.classList.add('opacity-50', 'cursor-not-allowed');
+            } else {
+                els.btnUp.disabled = false;
+                els.btnUp.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        }
+
+        // アプリケーション起動
+        window.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
